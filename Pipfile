@@ -1,0 +1,20 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+requests = "~=2.31.0"
+aws-lambda-powertools = "~=2.30.2"
+stripe = "~=7.11.0"
+
+[dev-packages]
+boto3 = "==1.26.90"
+invoke = "~=2.2.0"
+
+[requires]
+python_version = "3.9"
+
+[scripts]
+package = "invoke package"
+deploy = "invoke deploy"
