@@ -6,7 +6,7 @@ from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools import Logger
 import stripe
 
-from bubamara_backend.libs.aws import AWS
+from libs.aws import AWS
 
 
 STRIPE_API_KEY_PARAM = os.environ["STRIPE_API_KEY_PARAM"]
@@ -18,7 +18,7 @@ app = APIGatewayHttpResolver(cors=cors_config)
 logger = Logger()
 
 
-@app.get("/confirmation")
+@app.post("/confirmation")
 def payment_confirmation():
     try:
         checkout_session = app.current_event.get_query_string_value("cs")

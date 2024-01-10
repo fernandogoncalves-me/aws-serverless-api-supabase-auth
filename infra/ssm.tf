@@ -8,7 +8,7 @@ locals {
 }
 
 resource "aws_ssm_parameter" "plaintext" {
-  for_each = toset(local.ssm_params.plaintext)
+  for_each = local.ssm_params.plaintext
   name     = "/${local.title}/${each.key}"
   type     = "SecureString"
   value    = each.value

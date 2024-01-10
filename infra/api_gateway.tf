@@ -1,8 +1,8 @@
 locals {
   api_routes = {
-    payments = {
-      route_key       = "ANY /payments/v1/{proxy+}"
-      lambda_function = module.lambda_payments.invoke_arn
+    payments_confirmation = {
+      route_key       = "POST /payments/v1/confirmation"
+      lambda_function = module.lambda_payments
     }
   }
 }
@@ -10,7 +10,11 @@ locals {
 resource "aws_apigatewayv2_api" "backend" {
   name          = "${local.title}-api"
   protocol_type = "HTTP"
-  tags          = local.tags
+  cors_configuration {
+    allow_origins = [lookup(local.allow_origin, var.environment, local.allow_origin["nonprod"])]
+    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+  }
+  tags = local.tags
 }
 
 resource "aws_apigatewayv2_authorizer" "backend" {
@@ -18,8 +22,17 @@ resource "aws_apigatewayv2_authorizer" "backend" {
   name                              = "${aws_apigatewayv2_api.backend.name}-authorizer"
   authorizer_payload_format_version = "2.0"
   authorizer_type                   = "REQUEST"
-  authorizer_uri                    = module.lambda_authorizer.invoke_arn
+  authorizer_uri                    = module.lambda_authorizer.alias.invoke_arn
   identity_sources                  = ["$request.header.Authorization"]
+}
+
+resource "aws_lambda_permission" "api_gateway_authorizer" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = module.lambda_authorizer.alias.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.backend.execution_arn}/*"
+  qualifier     = module.lambda_authorizer.alias.name
 }
 
 resource "aws_apigatewayv2_integration" "this" {
@@ -28,7 +41,7 @@ resource "aws_apigatewayv2_integration" "this" {
   api_id             = aws_apigatewayv2_api.backend.id
   integration_type   = "AWS_PROXY"
   integration_method = "POST"
-  integration_uri    = each.value.lambda_function
+  integration_uri    = each.value.lambda_function.alias.invoke_arn
 }
 
 resource "aws_apigatewayv2_route" "this" {
@@ -42,19 +55,48 @@ resource "aws_apigatewayv2_route" "this" {
   target = "integrations/${aws_apigatewayv2_integration.this[each.key].id}"
 }
 
-resource "aws_apigatewayv2_domain_name" "this" {
+resource "aws_lambda_permission" "allow_api_gateway" {
+  for_each = local.api_routes
+
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = each.value.lambda_function.alias.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.backend.execution_arn}/*"
+  qualifier     = each.value.lambda_function.alias.name
+}
+
+resource "aws_apigatewayv2_domain_name" "backend" {
   domain_name = local.api_domain
 
   domain_name_configuration {
-    certificate_arn = aws_acm_certificate.this[local.api_domain].arn
+    certificate_arn = aws_acm_certificate.backend_api.arn
     endpoint_type   = "REGIONAL"
     security_policy = "TLS_1_2"
   }
+
+  depends_on = [aws_acm_certificate_validation.backend_api]
 }
 
 resource "aws_apigatewayv2_stage" "backend" {
   api_id = aws_apigatewayv2_api.backend.id
   name   = var.environment
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.backend_api.arn
+    format = jsonencode({
+      requestId               = "$context.requestId"
+      ip                      = "$context.identity.sourceIp"
+      requestTime             = "$context.requestTime"
+      httpMethod              = "$context.httpMethod"
+      routeKey                = "$context.routeKey"
+      status                  = "$context.status"
+      protocol                = "$context.protocol"
+      responseLength          = "$context.responseLength"
+      integrationStatus       = "$context.integrationStatus"
+      integrationErrorMessage = "$context.integrationErrorMessage"
+    })
+  }
 }
 
 resource "aws_apigatewayv2_api_mapping" "backend" {
@@ -69,8 +111,8 @@ resource "aws_apigatewayv2_deployment" "backend" {
 
   triggers = {
     redeployment = sha1(join(",", tolist([
-      jsonencode(aws_apigatewayv2_integration.backend),
-      jsonencode(aws_apigatewayv2_route.backend),
+      jsonencode(aws_apigatewayv2_integration.this),
+      jsonencode(aws_apigatewayv2_route.this),
     ])))
   }
 

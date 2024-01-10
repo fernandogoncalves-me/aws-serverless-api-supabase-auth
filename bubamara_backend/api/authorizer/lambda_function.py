@@ -3,7 +3,7 @@ import requests
 
 from aws_lambda_powertools import Logger
 
-from bubamara_backend.libs.aws import AWS
+from libs.aws import AWS
 
 SUPABASE_PROJECT_PARAM = os.environ['SUPABASE_PROJECT_PARAM']
 SUPABASE_API_KEY_PARAM = os.environ['SUPABASE_API_KEY_PARAM']

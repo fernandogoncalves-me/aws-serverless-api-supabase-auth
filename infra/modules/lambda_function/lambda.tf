@@ -1,11 +1,12 @@
 resource "aws_lambda_function" "this" {
-  filename      = "example.zip"
-  function_name = var.title
-  role          = aws_iam_role.this.arn
-  handler       = "lambda_function.lambda_handler"
-  runtime       = "python3.9"
-  layers        = var.layer_arns
-  publish       = true
+  filename         = "${path.root}/files/artifacts/lambda_package.zip"
+  function_name    = var.title
+  role             = aws_iam_role.this.arn
+  handler          = var.handler
+  runtime          = "python3.9"
+  source_code_hash = filebase64sha256("${path.root}/files/artifacts/lambda_package.zip")
+  layers           = var.layer_arns
+  publish          = true
 
   environment {
     variables = var.environment_variables

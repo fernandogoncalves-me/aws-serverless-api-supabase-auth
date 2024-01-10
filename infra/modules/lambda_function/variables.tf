@@ -8,6 +8,11 @@ variable "environment_variables" {
   description = "Environment variables for the Lambda Function"
 }
 
+variable "handler" {
+  type        = string
+  description = "Handler for the Lambda Function"
+}
+
 variable "iam_policy" {
   type        = string
   default     = null

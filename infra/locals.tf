@@ -5,12 +5,12 @@ locals {
 
   allow_origin = {
     production = "https://www.${local.apex_domain}",
-    non_prod   = "https://editor.weweb.io"
+    nonprod    = "https://editor.weweb.io"
   }
 
   domains = [
     local.apex_domain,
-    api_domain,
+    local.api_domain,
   ]
 
   supabase_projects = {
