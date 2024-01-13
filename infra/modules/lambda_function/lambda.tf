@@ -7,6 +7,8 @@ resource "aws_lambda_function" "this" {
   source_code_hash = filebase64sha256("${path.root}/files/artifacts/lambda_package.zip")
   layers           = var.layer_arns
   publish          = true
+  timeout          = 60
+  memory_size      = 256
 
   environment {
     variables = var.environment_variables

@@ -3,7 +3,7 @@ import requests
 
 from aws_lambda_powertools import Logger
 
-from libs.aws import AWS
+from bubamara_backend.libs.aws import AWS
 
 SUPABASE_PROJECT_PARAM = os.environ['SUPABASE_PROJECT_PARAM']
 SUPABASE_API_KEY_PARAM = os.environ['SUPABASE_API_KEY_PARAM']
@@ -13,10 +13,10 @@ logger = Logger()
 
 def lambda_handler(event, _):
     token = event['headers'].get('authorization', '')
-    supabase_project = aws.get_ssm_parameter('SUPABASE_PROJECT_PARAM')
-    supabase_api_key = aws.get_ssm_parameter('SUPABASE_API_KEY_PARAM')
+    supabase_project = aws.get_ssm_parameter(SUPABASE_PROJECT_PARAM)
+    supabase_api_key = aws.get_ssm_parameter(SUPABASE_API_KEY_PARAM)
     response = requests.get(
-        f'https://${supabase_project}.supabase.co/auth/v1/user', 
+        f'https://{supabase_project}.supabase.co/auth/v1/user', 
         headers={
             'Authorization': token, 
             'apikey': supabase_api_key

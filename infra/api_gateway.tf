@@ -1,18 +1,70 @@
 locals {
-  api_routes = {
-    payments_confirmation = {
-      route_key       = "POST /payments/v1/confirmation"
+  service_routes = {
+    members = {
+      base_path = "/members/v1/"
+      lambda_function = module.lambda_members
+      routes = {
+        me = {
+          method = "GET"
+        }
+      }
+    }
+    payments = {
+      base_path = "/payments/v1/"
       lambda_function = module.lambda_payments
+      routes = {
+        trial = {
+          method = "POST"
+        }
+      }
+    }
+    sessions = {
+      base_path = "/sessions/v1/"
+      lambda_function = module.lambda_sessions
+      routes = {
+        list = {
+          method = "GET"
+        }
+        reserve = {
+          method = "POST"
+        }
+        unreserve = {
+          method = "POST"
+        }
+      }
     }
   }
+
+  api_routes = flatten([
+    for service, service_config in local.service_routes : [
+      for route, route_config in service_config.routes: {
+        service = service
+        route = route
+        route_key = "${route_config.method} ${service_config.base_path}${route}"
+        lambda_function = service_config.lambda_function
+    }
+    ]
+  ])
+
+  api_lambda_permissions = flatten([
+    for service, service_config in local.service_routes : [
+      for route, route_config in service_config.routes: {
+        service = service
+        route = route
+        route_key = "${route_config.method} ${service_config.base_path}${route}"
+        lambda_function = service_config.lambda_function
+    }
+    ]
+  ])
 }
 
 resource "aws_apigatewayv2_api" "backend" {
   name          = "${local.title}-api"
   protocol_type = "HTTP"
   cors_configuration {
-    allow_origins = [lookup(local.allow_origin, var.environment, local.allow_origin["nonprod"])]
+    allow_origins = [for env, origin in local.allow_origin : origin]
     allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers = ["*"]
   }
   tags = local.tags
 }
@@ -36,16 +88,17 @@ resource "aws_lambda_permission" "api_gateway_authorizer" {
 }
 
 resource "aws_apigatewayv2_integration" "this" {
-  for_each = local.api_routes
+  for_each = { for route in local.api_routes : "${route.service}_${route.route}" => route }
 
-  api_id             = aws_apigatewayv2_api.backend.id
-  integration_type   = "AWS_PROXY"
-  integration_method = "POST"
-  integration_uri    = each.value.lambda_function.alias.invoke_arn
+  api_id                 = aws_apigatewayv2_api.backend.id
+  integration_type       = "AWS_PROXY"
+  integration_method     = "POST"
+  integration_uri        = each.value.lambda_function.alias.invoke_arn
+  payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_route" "this" {
-  for_each = local.api_routes
+  for_each = { for route in local.api_routes : "${route.service}_${route.route}" => route }
 
   api_id             = aws_apigatewayv2_api.backend.id
   authorization_type = "CUSTOM"
@@ -56,7 +109,7 @@ resource "aws_apigatewayv2_route" "this" {
 }
 
 resource "aws_lambda_permission" "allow_api_gateway" {
-  for_each = local.api_routes
+  for_each = { for service, service_config in local.service_routes : service => service_config }
 
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"

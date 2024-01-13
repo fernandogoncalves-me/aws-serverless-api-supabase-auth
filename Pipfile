@@ -4,13 +4,14 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-requests = "~=2.31.0"
 aws-lambda-powertools = "~=2.30.2"
 stripe = "~=7.11.0"
+urllib3 = "~=1.26.18"
+requests = "~=2.31.0"
 
 [dev-packages]
-boto3 = "==1.26.90"
 invoke = "~=2.2.0"
+boto3 = "~=1.26.90"
 
 [requires]
 python_version = "3.9"

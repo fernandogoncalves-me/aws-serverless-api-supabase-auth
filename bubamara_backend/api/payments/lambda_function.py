@@ -1,41 +1,59 @@
 import os
 
-from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, CORSConfig, Response
+from aws_lambda_powertools.event_handler import APIGatewayHttpResolver
+from aws_lambda_powertools.event_handler.exceptions import BadRequestError
 from aws_lambda_powertools.utilities.typing import LambdaContext
 from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools import Logger
 import stripe
 
-from libs.aws import AWS
+from bubamara_backend.libs.aws import AWS
 
 
+MEMBERS_TABLE = os.environ["MEMBERS_TABLE"]
 STRIPE_API_KEY_PARAM = os.environ["STRIPE_API_KEY_PARAM"]
-ALLOW_ORIGIN = os.environ["ALLOW_ORIGIN"]
 
+app = APIGatewayHttpResolver()
 aws = AWS()
-cors_config = CORSConfig(allow_origin=ALLOW_ORIGIN)
-app = APIGatewayHttpResolver(cors=cors_config)
 logger = Logger()
 
 
-@app.post("/confirmation")
-def payment_confirmation():
-    try:
-        checkout_session = app.current_event.get_query_string_value("cs")
-        confirmation = stripe.checkout.Session.retrieve(checkout_session)
-        logger.info(confirmation)
+def retrieve_payment_confirmation(checkout_session: str) -> dict:
+    logger.info(f"Retrieving payment confirmation for session {checkout_session}")
+    confirmation = stripe.checkout.Session.retrieve(checkout_session)
+    logger.info(f"Payment confirmation: {confirmation}")
+    return confirmation
 
-        if confirmation["payment_status"] != "paid":
-            return Response(status_code=400, body={"message": "Payment not completed."})
-        else:
-            return Response(status_code=200, body={"message": "Payment completed."})
+
+@app.post("/payments/v1/trial")
+def trial():
+    try:
+        confirmation = retrieve_payment_confirmation(app.current_event.get_query_string_value(name="checkout_session_id"))
+
+        if confirmation["payment_status"] == "paid":
+            logger.info(f"Payment confirmed for {confirmation['customer_details']['email']}")
+            aws.put_ddb_item(
+                table_name=MEMBERS_TABLE,
+                params={
+                    "Item": {
+                        "Email": confirmation["customer_details"]["email"],
+                        "SubscriptionId": confirmation["metadata"]["subscriptionId"],
+                        "SessionCredits": "1",
+                    },
+                    "ConditionExpression": "attribute_not_exists(Email)"
+                }
+            )
+            logger.info(f"Added trial subscription for {confirmation['customer_details']['email']}")
+
+        return {"status": confirmation["payment_status"]}
 
     except Exception as e:
         logger.exception(e)
-        return {"message": "Failed to retrieve payment confirmation"}, 500
+        raise BadRequestError("Failed to confirm payment. Please contact us for assistance.")
 
 
 @logger.inject_lambda_context(correlation_id_path=correlation_paths.API_GATEWAY_HTTP)
 def lambda_handler(event: dict, context: LambdaContext) -> dict:
+    logger.info(f"Got request: {event}")
     stripe.api_key = aws.get_ssm_parameter(STRIPE_API_KEY_PARAM)
     return app.resolve(event, context)
