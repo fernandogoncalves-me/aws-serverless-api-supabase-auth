@@ -120,7 +120,8 @@ module "lambda_sessions" {
   environment_variables = {
     MEMBERS_TABLE           = aws_dynamodb_table.members.name
     POWERTOOLS_SERVICE_NAME = "sessions"
-    SESSIONS_TABLE           = aws_dynamodb_table.sessions.name
+    RESERVATIONS_TABLE      = aws_dynamodb_table.reservations.name
+    SESSIONS_TABLE          = aws_dynamodb_table.sessions.name
   }
 
   iam_policy = templatefile("${path.module}/files/iam/permission_policy.json.tpl", {
@@ -137,11 +138,22 @@ module "lambda_sessions" {
       {
         "Effect" : "Allow",
         "Action" : [
-          "dynamodb:Query"
+          "dynamodb:Query",
+          "dynamodb:UpdateItem",
         ],
         "Resource" : [
           aws_dynamodb_table.sessions.arn,
           "${aws_dynamodb_table.sessions.arn}/*"
+        ]
+      },
+      {
+        "Effect" : "Allow",
+        "Action" : [
+          "dynamodb:DeleteItem",
+          "dynamodb:Putitem",
+        ],
+        "Resource" : [
+          aws_dynamodb_table.reservations.arn
         ]
       }
     ])

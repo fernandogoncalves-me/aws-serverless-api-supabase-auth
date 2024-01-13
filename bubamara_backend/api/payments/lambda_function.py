@@ -37,13 +37,39 @@ def trial():
                 params={
                     "Item": {
                         "Email": confirmation["customer_details"]["email"],
-                        "SubscriptionId": confirmation["metadata"]["subscriptionId"],
-                        "SessionCredits": "1",
+                        "SubscriptionType": confirmation["metadata"]["subscriptionType"],
+                        "EarnedSessionCredits": int(confirmation["metadata"]["sessionCredits"]),
                     },
                     "ConditionExpression": "attribute_not_exists(Email)"
                 }
             )
             logger.info(f"Added trial subscription for {confirmation['customer_details']['email']}")
+
+        return {"status": confirmation["payment_status"]}
+
+    except Exception as e:
+        logger.exception(e)
+        raise BadRequestError("Failed to confirm payment. Please contact us for assistance.")
+
+
+@app.post("/payments/v1/membership")
+def membership():
+    try:
+        confirmation = retrieve_payment_confirmation(app.current_event.get_query_string_value(name="checkout_session_id"))
+
+        if confirmation["payment_status"] == "paid":
+            logger.info(f"Payment confirmed for {confirmation['customer_details']['email']}")
+            aws.update_ddb_item(
+                table_name=MEMBERS_TABLE,
+                params={
+                    "Key": { "Email": confirmation["customer_details"]["email"]},
+                    "AttributeUpdates": {
+                        "SubscriptionType": {"Value": confirmation["metadata"]["subscriptionType"], "Action": "PUT"},
+                        "EarnedSessionCredits": {"Value": int(confirmation["metadata"]["sessionCredits"]), "Action": "ADD"},
+                    }
+                }
+            )
+            logger.info(f"Added membership subscription for {confirmation['customer_details']['email']}")
 
         return {"status": confirmation["payment_status"]}
 

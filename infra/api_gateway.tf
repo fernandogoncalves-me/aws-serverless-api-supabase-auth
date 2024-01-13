@@ -1,7 +1,7 @@
 locals {
   service_routes = {
     members = {
-      base_path = "/members/v1/"
+      base_path       = "/members/v1/"
       lambda_function = module.lambda_members
       routes = {
         me = {
@@ -10,16 +10,19 @@ locals {
       }
     }
     payments = {
-      base_path = "/payments/v1/"
+      base_path       = "/payments/v1/"
       lambda_function = module.lambda_payments
       routes = {
+        membership = {
+          method = "POST"
+        }
         trial = {
           method = "POST"
         }
       }
     }
     sessions = {
-      base_path = "/sessions/v1/"
+      base_path       = "/sessions/v1/"
       lambda_function = module.lambda_sessions
       routes = {
         list = {
@@ -37,23 +40,23 @@ locals {
 
   api_routes = flatten([
     for service, service_config in local.service_routes : [
-      for route, route_config in service_config.routes: {
-        service = service
-        route = route
-        route_key = "${route_config.method} ${service_config.base_path}${route}"
+      for route, route_config in service_config.routes : {
+        service         = service
+        route           = route
+        route_key       = "${route_config.method} ${service_config.base_path}${route}"
         lambda_function = service_config.lambda_function
-    }
+      }
     ]
   ])
 
   api_lambda_permissions = flatten([
     for service, service_config in local.service_routes : [
-      for route, route_config in service_config.routes: {
-        service = service
-        route = route
-        route_key = "${route_config.method} ${service_config.base_path}${route}"
+      for route, route_config in service_config.routes : {
+        service         = service
+        route           = route
+        route_key       = "${route_config.method} ${service_config.base_path}${route}"
         lambda_function = service_config.lambda_function
-    }
+      }
     ]
   ])
 }

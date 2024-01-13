@@ -11,6 +11,7 @@ from bubamara_backend.libs.aws import AWS
 
 
 MEMBERS_TABLE = os.environ["MEMBERS_TABLE"]
+RESERVATIONS_TABLE = os.environ["RESERVATIONS_TABLE"]
 SESSIONS_TABLE = os.environ["SESSIONS_TABLE"]
 
 app = APIGatewayHttpResolver()
@@ -22,73 +23,38 @@ logger = Logger()
 def reserve():
     try:
         body = json.loads(app.current_event.body)
-        member = aws.get_ddb_item(
-            table_name=MEMBERS_TABLE,
-            key={"Email": body["member_email"]}
+        result = aws.transact_write_items(
+            transact_items=[
+                {
+                    "Put": {
+                        "TableName": RESERVATIONS_TABLE,
+                        "Item": {"Email": {"S": body["member_email"]}, "ReservationType": {"S": f"{body['session_type']}#{body['session_datetime']}"}},
+                        "ConditionExpression": "attribute_not_exists(Email) and attribute_not_exists(ReservationType)"
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": SESSIONS_TABLE,
+                        "Key": {"SessionType": {"S": body["session_type"]}, "Datetime": {"S": body["session_datetime"]}},
+                        "UpdateExpression": "ADD Reservations :increment",
+                        "ExpressionAttributeValues": {":increment": {"N": "1"},},
+                        "ConditionExpression": "Reservations < MaxCapacity"
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": MEMBERS_TABLE,
+                        "Key": {"Email": {"S": body["member_email"]}},
+                        "UpdateExpression": "ADD UsedSessionCredits :increment",
+                        "ExpressionAttributeValues": {":increment": {"N": "1"},},
+                        "ConditionExpression": "UsedSessionCredits < EarnedSessionCredits"
+                    }
+                }
+            ]
         )
-        session = aws.get_ddb_item(
-            table_name=SESSIONS_TABLE,
-            key={"Type": body["session_type"], "DateTime": body["session_datetime"]}
-        )
-        # if member["AvailableSessionCredits"] > 0 and len(session["Reservations"]) < session["Capacity"]:
-        #     batch_result = aws.transact_write_items(
-        #         transact_items={
-        #             "ConditionCheck": {
+        logger.info(f"Reservation result: {result}")
 
-        #             }
-        #             MEMBERS_TABLE: [
-        #                 {
-        #                     "PutRequest": {
-        #                         "Item": {
-        #                             "Email": body["member_email"],
-        #                             "AvailableSessionCredits": member["AvailableSessionCredits"] - 1
-        #                         }
-        #                     }
-        #                 }
-        #             ],
-        #             SESSIONS_TABLE: [
-        #                 {
-        #                     "PutRequest": {
-        #                         "Item": {
-        #                             "Type": body["session_type"],
-        #                             "DateTime": body["session_datetime"],
-        #                             "Reservations": [body["member_email"]]
-        #                         }
-        #                     }
-        #                 }
-        #             ]
-        #         }
-        #     )
-        #     member = aws.update_ddb_item(
-        #         table_name=MEMBERS_TABLE,
-        #         params={
-        #             "Key": {"Email": body["member_email"]},
-        #             "UpdateExpression": "ADD #credits :amount",
-        #             "ExpressionAttributeNames": {"#credits": "SessionCredits"},
-        #             "ExpressionAttributeValues": {":amount": -1, ":minimum": 0},
-        #             "ReturnValues": "UPDATED_NEW",
-        #             "ConditionExpression": "#credits > :minimum"
-        #         }
-        #     )
-        session = aws.update_ddb_item(
-            table_name=SESSIONS_TABLE,
-            params={
-                "Key": {"Type": body["session_type"], "DateTime": body["session_datetime"]},
-                "UpdateExpression": "ADD #reservations :attendee",
-                "ExpressionAttributeNames": {"#reservations": "Reservations", "#capacity": "Capacity"},
-                "ExpressionAttributeValues": {":attendee": [body["member_email"]]},
-                "ReturnValues": "UPDATED_NEW",
-                "ConditionExpression": "#credits > :minimum"
-            }
-        )
-        logger.info(f"Updated member: {member}")
-
-        logger.info(f"Updated session: {session}")
-
-        return {
-            "member": member,
-            "session": session
-        }
+        return { "status": "reserved" }
 
     except Exception as e:
         logger.exception(e)
@@ -99,39 +65,41 @@ def reserve():
 def unreserve():
     try:
         body = json.loads(app.current_event.body)
-        member = aws.update_ddb_item(
-            table_name=MEMBERS_TABLE,
-            params={
-                "Key": {"Email": body["member_email"]},
-                "UpdateExpression": "ADD #credits :amount",
-                "ExpressionAttributeNames": {"#credits": "SessionCredits"},
-                "ExpressionAttributeValues": {":amount": 1},
-                "ReturnValues": "UPDATED_NEW"
-            }
+        logger.info("Canceling reservation")
+        result = aws.transact_write_items(
+            transact_items=[
+                {
+                    "Delete": {
+                        "TableName": RESERVATIONS_TABLE,
+                        "Key": {"Email": {"S": body["member_email"]}, "ReservationType": {"S": f"{body['session_type']}#{body['session_datetime']}"}},
+                        "ConditionExpression": "attribute_exists(Email) and attribute_exists(ReservationType)"
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": MEMBERS_TABLE,
+                        "Key": {"Email": {"S": body["member_email"]}},
+                        "UpdateExpression": "ADD UsedSessionCredits :decrement",
+                        "ExpressionAttributeValues": {":decrement": {"N": "-1"},}
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": SESSIONS_TABLE,
+                        "Key": {"SessionType": {"S": body["session_type"]}, "Datetime": {"S": body["session_datetime"]}},
+                        "UpdateExpression": "ADD Reservations :decrement",
+                        "ExpressionAttributeValues": {":decrement": {"N": "-1"},}
+                    }
+                }
+            ]
         )
-        logger.info(f"Updated member: {member}")
+        logger.info(f"Unreserve result: {result}")
 
-        session = aws.update_ddb_item(
-            table_name=SESSIONS_TABLE,
-            params={
-                "Key": {"Type": body["session_type"], "DateTime": body["session_datetime"]},
-                "UpdateExpression": "ADD #reservations :attendee",
-                "ExpressionAttributeNames": {"#reservations": "Reservations", "#capacity": "Capacity"},
-                "ExpressionAttributeValues": {":attendee": [body["member_email"]]},
-                "ReturnValues": "UPDATED_NEW",
-                "ConditionExpression": "#credits > :minimum"
-            }
-        )
-        logger.info(f"Updated session: {session}")
-
-        return {
-            "member": member,
-            "session": session
-        }
+        return { "status": "unreserved" }
 
     except Exception as e:
         logger.exception(e)
-        raise BadRequestError("Failed to confirm payment. Please contact us for assistance.")
+        raise BadRequestError("Failed to cancel reservation. Please contact us for assistance.")
 
 
 @app.get("/sessions/v1/list")
@@ -142,8 +110,7 @@ def list():
         
         params={
             "Limit": 15,
-            "KeyConditionExpression": "#pk = :pk",
-            "ExpressionAttributeNames": {"#pk": "Type"},
+            "KeyConditionExpression": "SessionType = :pk",
             "ExpressionAttributeValues": {":pk": session_type},
         }
         if pagination_key:

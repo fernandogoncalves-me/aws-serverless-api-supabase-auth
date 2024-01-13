@@ -22,3 +22,6 @@ class AWS:
   def update_ddb_item(self, table_name: str, params: dict) -> None:
     return self.session.resource("dynamodb").Table(table_name).update_item(**params)
   
+  def transact_write_items(self, transact_items: list) -> None:
+    return self.session.client("dynamodb").transact_write_items(TransactItems=transact_items)
+  
