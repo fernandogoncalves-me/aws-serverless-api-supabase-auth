@@ -1,6 +1,7 @@
 locals {
   service_routes = {
     members = {
+      authorizer_id   = aws_apigatewayv2_authorizer.backend.id
       base_path       = "/members/v1/"
       lambda_function = module.lambda_members
       routes = {
@@ -13,11 +14,17 @@ locals {
       base_path       = "/payments/v1/"
       lambda_function = module.lambda_payments
       routes = {
-        membership = {
+        confirmation = {
           method = "POST"
         }
+      }
+    }
+    redirect = {
+      base_path       = "/redirect/v1/"
+      lambda_function = module.lambda_redirect
+      routes = {
         trial = {
-          method = "POST"
+          method = "GET"
         }
       }
     }
@@ -28,11 +35,17 @@ locals {
         list = {
           method = "GET"
         }
+        reservations = {
+          authorizer_id = aws_apigatewayv2_authorizer.backend.id
+          method        = "GET"
+        }
         reserve = {
-          method = "POST"
+          authorizer_id = aws_apigatewayv2_authorizer.backend.id
+          method        = "POST"
         }
         unreserve = {
-          method = "POST"
+          authorizer_id = aws_apigatewayv2_authorizer.backend.id
+          method        = "POST"
         }
       }
     }
@@ -41,6 +54,7 @@ locals {
   api_routes = flatten([
     for service, service_config in local.service_routes : [
       for route, route_config in service_config.routes : {
+        authorizer_id   = try(service_config.authorizer_id, route_config.authorizer_id, null)
         service         = service
         route           = route
         route_key       = "${route_config.method} ${service_config.base_path}${route}"
@@ -104,8 +118,8 @@ resource "aws_apigatewayv2_route" "this" {
   for_each = { for route in local.api_routes : "${route.service}_${route.route}" => route }
 
   api_id             = aws_apigatewayv2_api.backend.id
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.backend.id
+  authorization_type = each.value.authorizer_id != null ? "CUSTOM" : "NONE"
+  authorizer_id      = each.value.authorizer_id
   route_key          = each.value.route_key
 
   target = "integrations/${aws_apigatewayv2_integration.this[each.key].id}"

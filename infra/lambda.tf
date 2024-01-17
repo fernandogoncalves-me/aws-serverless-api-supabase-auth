@@ -96,11 +96,53 @@ module "lambda_payments" {
       {
         "Effect" : "Allow",
         "Action" : [
-          "dynamodb:PutItem",
           "dynamodb:UpdateItem"
         ],
         "Resource" : [
           aws_dynamodb_table.members.arn
+        ]
+      }
+    ])
+  })
+
+  tags = local.tags
+}
+
+module "lambda_redirect" {
+  source = "./modules/lambda_function"
+
+  title       = "${local.title}-api-redirect"
+  handler     = "bubamara_backend.api.redirect.lambda_function.lambda_handler"
+  environment = var.environment
+  layer_arns  = [aws_lambda_layer_version.pip.arn]
+
+  environment_variables = {
+    ALREADY_MEMBER_LINK_PARAM = aws_ssm_parameter.plaintext["already_member_link"].name
+    MEMBERS_TABLE             = aws_dynamodb_table.members.name
+    POWERTOOLS_SERVICE_NAME   = "redirect"
+    TRIAL_PAYMENT_LINK_PARAM  = aws_ssm_parameter.plaintext["trial_payment_link"].name
+  }
+
+  iam_policy = templatefile("${path.module}/files/iam/permission_policy.json.tpl", {
+    iam_policy_statements = jsonencode([
+      {
+        "Effect" : "Allow",
+        "Action" : [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem"
+        ],
+        "Resource" : [
+          aws_dynamodb_table.members.arn
+        ]
+      },
+      {
+        "Effect" : "Allow",
+        "Action" : [
+          "ssm:GetParameter"
+        ],
+        "Resource" : [
+          aws_ssm_parameter.plaintext["already_member_link"].arn,
+          aws_ssm_parameter.plaintext["trial_payment_link"].arn
         ]
       }
     ])
@@ -151,6 +193,7 @@ module "lambda_sessions" {
         "Action" : [
           "dynamodb:DeleteItem",
           "dynamodb:Putitem",
+          "dynamodb:Query"
         ],
         "Resource" : [
           aws_dynamodb_table.reservations.arn

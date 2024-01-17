@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 
@@ -18,6 +19,32 @@ app = APIGatewayHttpResolver()
 aws = AWS()
 logger = Logger()
 
+@app.get("/sessions/v1/reservations")
+def reservations():
+    try:
+        email = app.current_event.get_query_string_value(name="email")
+        session_type = app.current_event.get_query_string_value(name="session_type")
+        pagination_key = app.current_event.get_query_string_value(name="pagination_key", default_value=None)
+        
+        params={
+            "Limit": 15,
+            "KeyConditionExpression": "Email = :pk and begins_with(ReservationType, :sk)",
+            "ExpressionAttributeValues": {":pk": email, ":sk": session_type},
+        }
+        if pagination_key:
+            params["ExclusiveStartKey"] = {"S": pagination_key}
+
+        reservations = aws.query_ddb_items(
+            table_name=RESERVATIONS_TABLE,
+            params=params
+        )
+        logger.info(f"Retrieved reservations: {reservations}")
+
+        return {"reservations": reservations}
+
+    except Exception as e:
+        logger.exception(e)
+        raise BadRequestError("Failed to retrieve sessions. Please contact us for assistance.")
 
 @app.post("/sessions/v1/reserve")
 def reserve():
@@ -35,7 +62,7 @@ def reserve():
                 {
                     "Update": {
                         "TableName": SESSIONS_TABLE,
-                        "Key": {"SessionType": {"S": body["session_type"]}, "Datetime": {"S": body["session_datetime"]}},
+                        "Key": {"SessionType": {"S": body["session_type"]}, "SessionDatetime": {"S": body["session_datetime"]}},
                         "UpdateExpression": "ADD Reservations :increment",
                         "ExpressionAttributeValues": {":increment": {"N": "1"},},
                         "ConditionExpression": "Reservations < MaxCapacity"
@@ -86,7 +113,7 @@ def unreserve():
                 {
                     "Update": {
                         "TableName": SESSIONS_TABLE,
-                        "Key": {"SessionType": {"S": body["session_type"]}, "Datetime": {"S": body["session_datetime"]}},
+                        "Key": {"SessionType": {"S": body["session_type"]}, "SessionDatetime": {"S": body["session_datetime"]}},
                         "UpdateExpression": "ADD Reservations :decrement",
                         "ExpressionAttributeValues": {":decrement": {"N": "-1"},}
                     }
@@ -107,11 +134,12 @@ def list():
     try:
         session_type = app.current_event.get_query_string_value(name="session_type")
         pagination_key = app.current_event.get_query_string_value(name="pagination_key", default_value=None)
+        tomorrow = datetime.datetime.now() + datetime.timedelta(days=1)
         
         params={
             "Limit": 15,
-            "KeyConditionExpression": "SessionType = :pk",
-            "ExpressionAttributeValues": {":pk": session_type},
+            "KeyConditionExpression": "SessionType = :pk and SessionDatetime > :sk",
+            "ExpressionAttributeValues": {":pk": session_type, ":sk": tomorrow.strftime("%Y-%m-%d")},
         }
         if pagination_key:
             params["ExclusiveStartKey"] = {"S": pagination_key}

@@ -31,10 +31,10 @@ resource "aws_dynamodb_table" "sessions" {
   name         = "${local.title}-sessions"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "SessionType"
-  range_key    = "Datetime"
+  range_key    = "SessionDatetime"
 
   attribute {
-    name = "Datetime"
+    name = "SessionDatetime"
     type = "S"
   }
 

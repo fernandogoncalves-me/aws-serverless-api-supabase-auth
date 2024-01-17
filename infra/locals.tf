@@ -1,7 +1,9 @@
 locals {
-  title       = "bubamarahub"
-  apex_domain = "${local.title}.com"
-  api_domain  = "api.${local.apex_domain}"
+  title               = "bubamarahub"
+  already_member_link = "https://www.bubamarahub.com/already-member"
+  apex_domain         = "${local.title}.com"
+  api_domain          = "api.${local.apex_domain}"
+  trial_payment_link  = "https://buy.stripe.com/test_7sIdQVcdPey93UQ000"
 
   allow_origin = {
     production = "https://www.${local.apex_domain}",

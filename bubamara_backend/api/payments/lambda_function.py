@@ -25,53 +25,30 @@ def retrieve_payment_confirmation(checkout_session: str) -> dict:
     return confirmation
 
 
-@app.post("/payments/v1/trial")
-def trial():
+@app.post("/payments/v1/confirmation")
+def confirmation():
     try:
-        confirmation = retrieve_payment_confirmation(app.current_event.get_query_string_value(name="checkout_session_id"))
+        checkout_session_id = app.current_event.get_query_string_value(name="checkout_session_id")
+        confirmation = retrieve_payment_confirmation(checkout_session_id)
+        email = confirmation["customer_details"]["email"]
 
         if confirmation["payment_status"] == "paid":
             logger.info(f"Payment confirmed for {confirmation['customer_details']['email']}")
-            aws.put_ddb_item(
-                table_name=MEMBERS_TABLE,
-                params={
-                    "Item": {
-                        "Email": confirmation["customer_details"]["email"],
-                        "SubscriptionType": confirmation["metadata"]["subscriptionType"],
-                        "EarnedSessionCredits": int(confirmation["metadata"]["sessionCredits"]),
-                    },
-                    "ConditionExpression": "attribute_not_exists(Email)"
-                }
-            )
-            logger.info(f"Added trial subscription for {confirmation['customer_details']['email']}")
-
-        return {"status": confirmation["payment_status"]}
-
-    except Exception as e:
-        logger.exception(e)
-        raise BadRequestError("Failed to confirm payment. Please contact us for assistance.")
-
-
-@app.post("/payments/v1/membership")
-def membership():
-    try:
-        confirmation = retrieve_payment_confirmation(app.current_event.get_query_string_value(name="checkout_session_id"))
-
-        if confirmation["payment_status"] == "paid":
-            logger.info(f"Payment confirmed for {confirmation['customer_details']['email']}")
+            subscription_type = confirmation["metadata"]["subscriptionType"]
+            session_credits = int(confirmation["metadata"]["sessionCredits"])
             aws.update_ddb_item(
                 table_name=MEMBERS_TABLE,
                 params={
-                    "Key": { "Email": confirmation["customer_details"]["email"]},
-                    "AttributeUpdates": {
-                        "SubscriptionType": {"Value": confirmation["metadata"]["subscriptionType"], "Action": "PUT"},
-                        "EarnedSessionCredits": {"Value": int(confirmation["metadata"]["sessionCredits"]), "Action": "ADD"},
-                    }
+                    "Key": { "Email": email},
+                    "UpdateExpression": "SET SubscriptionType = :subscription_type, EarnedSessionCredits = EarnedSessionCredits + :earned_session_credits, CheckoutSessionId = :checkout_session_id",
+                    "ExpressionAttributeValues": {":checkout_session_id": checkout_session_id, ":subscription_type": subscription_type, ":earned_session_credits": int(session_credits)},
+                    "ConditionExpression": "SubscriptionType <> :subscription_type"
                 }
             )
-            logger.info(f"Added membership subscription for {confirmation['customer_details']['email']}")
+            
+            logger.info(f"Added {subscription_type} subscription for {email}")
 
-        return {"status": confirmation["payment_status"]}
+        return { "status": confirmation["payment_status"], "subscription_type": subscription_type, "email": email }
 
     except Exception as e:
         logger.exception(e)
