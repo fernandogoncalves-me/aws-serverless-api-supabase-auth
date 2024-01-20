@@ -47,79 +47,14 @@ module "lambda_members" {
   layer_arns  = [aws_lambda_layer_version.pip.arn]
 
   environment_variables = {
-    MEMBERS_TABLE           = aws_dynamodb_table.members.name
-    POWERTOOLS_SERVICE_NAME = "members"
-  }
-
-  iam_policy = templatefile("${path.module}/files/iam/permission_policy.json.tpl", {
-    iam_policy_statements = jsonencode([
-      {
-        "Effect" : "Allow",
-        "Action" : [
-          "dynamodb:GetItem"
-        ],
-        "Resource" : [
-          aws_dynamodb_table.members.arn
-        ]
-      }
-    ])
-  })
-
-  tags = local.tags
-}
-
-module "lambda_payments" {
-  source = "./modules/lambda_function"
-
-  title       = "${local.title}-api-payments"
-  handler     = "bubamara_backend.api.payments.lambda_function.lambda_handler"
-  environment = var.environment
-  layer_arns  = [aws_lambda_layer_version.pip.arn]
-
-  environment_variables = {
-    MEMBERS_TABLE           = aws_dynamodb_table.members.name
-    POWERTOOLS_SERVICE_NAME = "payments"
-    STRIPE_API_KEY_PARAM    = aws_ssm_parameter.sensitive["stripe_api_key"].name
-  }
-
-  iam_policy = templatefile("${path.module}/files/iam/permission_policy.json.tpl", {
-    iam_policy_statements = jsonencode([
-      {
-        "Effect" : "Allow",
-        "Action" : [
-          "ssm:GetParameter"
-        ],
-        "Resource" : [
-          aws_ssm_parameter.sensitive["stripe_api_key"].arn
-        ]
-      },
-      {
-        "Effect" : "Allow",
-        "Action" : [
-          "dynamodb:UpdateItem"
-        ],
-        "Resource" : [
-          aws_dynamodb_table.members.arn
-        ]
-      }
-    ])
-  })
-
-  tags = local.tags
-}
-
-module "lambda_redirect" {
-  source = "./modules/lambda_function"
-
-  title       = "${local.title}-api-redirect"
-  handler     = "bubamara_backend.api.redirect.lambda_function.lambda_handler"
-  environment = var.environment
-  layer_arns  = [aws_lambda_layer_version.pip.arn]
-
-  environment_variables = {
-    ALREADY_MEMBER_LINK_PARAM = aws_ssm_parameter.plaintext["already_member_link"].name
+    LEADS_TABLE               = aws_dynamodb_table.leads.name
     MEMBERS_TABLE             = aws_dynamodb_table.members.name
-    POWERTOOLS_SERVICE_NAME   = "redirect"
+    POWERTOOLS_SERVICE_NAME   = "members"
+    STRIPE_API_KEY_PARAM      = aws_ssm_parameter.sensitive["stripe_api_key"].name
+    SUPABASE_PROJECT_PARAM    = aws_ssm_parameter.plaintext["supabase_project"].name
+    SUPABASE_API_KEY_PARAM    = aws_ssm_parameter.sensitive["supabase_api_key"].name
+    SUPABASE_SECRET_KEY_PARAM = aws_ssm_parameter.sensitive["supabase_secret_key"].name
+    TRIAL_ACTIVE_LINK_PARAM   = aws_ssm_parameter.plaintext["trial_active_link"].name
     TRIAL_PAYMENT_LINK_PARAM  = aws_ssm_parameter.plaintext["trial_payment_link"].name
   }
 
@@ -129,10 +64,22 @@ module "lambda_redirect" {
         "Effect" : "Allow",
         "Action" : [
           "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query"
+        ],
+        "Resource" : [
+          aws_dynamodb_table.members.arn,
+          "${aws_dynamodb_table.members.arn}/*"
+        ]
+      },
+      {
+        "Effect" : "Allow",
+        "Action" : [
+          "dynamodb:DeleteItem",
           "dynamodb:PutItem"
         ],
         "Resource" : [
-          aws_dynamodb_table.members.arn
+          aws_dynamodb_table.leads.arn
         ]
       },
       {
@@ -141,7 +88,11 @@ module "lambda_redirect" {
           "ssm:GetParameter"
         ],
         "Resource" : [
-          aws_ssm_parameter.plaintext["already_member_link"].arn,
+          aws_ssm_parameter.plaintext["supabase_project"].arn,
+          aws_ssm_parameter.sensitive["stripe_api_key"].arn,
+          aws_ssm_parameter.sensitive["supabase_api_key"].arn,
+          aws_ssm_parameter.sensitive["supabase_secret_key"].arn,
+          aws_ssm_parameter.plaintext["trial_active_link"].arn,
           aws_ssm_parameter.plaintext["trial_payment_link"].arn
         ]
       }

@@ -1,28 +1,16 @@
 locals {
   service_routes = {
     members = {
-      authorizer_id   = aws_apigatewayv2_authorizer.backend.id
       base_path       = "/members/v1/"
       lambda_function = module.lambda_members
-      routes = {
-        me = {
-          method = "GET"
-        }
-      }
-    }
-    payments = {
-      base_path       = "/payments/v1/"
-      lambda_function = module.lambda_payments
       routes = {
         confirmation = {
           method = "POST"
         }
-      }
-    }
-    redirect = {
-      base_path       = "/redirect/v1/"
-      lambda_function = module.lambda_redirect
-      routes = {
+        me = {
+          authorizer_id = aws_apigatewayv2_authorizer.backend.id
+          method        = "GET"
+        }
         trial = {
           method = "GET"
         }

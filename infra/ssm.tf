@@ -1,11 +1,11 @@
 locals {
   ssm_params = {
     plaintext = {
-      already_member_link = local.already_member_link
-      supabase_project    = local.supabase_projects[var.environment]
-      trial_payment_link  = local.trial_payment_link
+      supabase_project   = local.supabase_projects[var.environment]
+      trial_active_link  = local.trial_active_link
+      trial_payment_link = local.trial_payment_link
     }
-    sensitive = ["stripe_api_key", "supabase_api_key"]
+    sensitive = ["stripe_api_key", "supabase_api_key", "supabase_secret_key"]
   }
 }
 

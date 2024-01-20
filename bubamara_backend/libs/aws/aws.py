@@ -10,6 +10,9 @@ class AWS:
       WithDecryption=with_decryption
     )["Parameter"]["Value"]
 
+  def delete_ddb_item(self, table_name: str, key: dict) -> None:
+    return self.session.resource("dynamodb").Table(table_name).delete_item(Key=key, ReturnValues="ALL_OLD")
+  
   def get_ddb_item(self, table_name: str, key: dict) -> dict:
     return self.session.resource("dynamodb").Table(table_name).get_item(Key=key).get("Item", None)
   

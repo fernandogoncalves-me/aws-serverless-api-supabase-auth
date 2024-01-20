@@ -19,6 +19,36 @@ app = APIGatewayHttpResolver()
 aws = AWS()
 logger = Logger()
 
+@app.get("/sessions/v1/prereservation")
+def prereservation():
+    try:
+        email = app.current_event.get_query_string_value(name="email")
+        session_type = app.current_event.get_query_string_value(name="session_type")
+        session_datetime = app.current_event.get_query_string_value(name="session_datetime")
+
+        aws.put_ddb_item()
+        
+        params={
+            "Limit": 15,
+            "KeyConditionExpression": "Email = :pk and begins_with(ReservationType, :sk)",
+            "ExpressionAttributeValues": {":pk": email, ":sk": session_type},
+        }
+        if pagination_key:
+            params["ExclusiveStartKey"] = {"S": pagination_key}
+
+        reservations = aws.query_ddb_items(
+            table_name=RESERVATIONS_TABLE,
+            params=params
+        )
+        logger.info(f"Retrieved reservations: {reservations}")
+
+        return {"reservations": reservations}
+
+    except Exception as e:
+        logger.exception(e)
+        raise BadRequestError("Failed to retrieve sessions. Please contact us for assistance.")
+
+
 @app.get("/sessions/v1/reservations")
 def reservations():
     try:
