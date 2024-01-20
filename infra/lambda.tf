@@ -47,15 +47,13 @@ module "lambda_members" {
   layer_arns  = [aws_lambda_layer_version.pip.arn]
 
   environment_variables = {
-    LEADS_TABLE               = aws_dynamodb_table.leads.name
-    MEMBERS_TABLE             = aws_dynamodb_table.members.name
-    POWERTOOLS_SERVICE_NAME   = "members"
-    STRIPE_API_KEY_PARAM      = aws_ssm_parameter.sensitive["stripe_api_key"].name
-    SUPABASE_PROJECT_PARAM    = aws_ssm_parameter.plaintext["supabase_project"].name
-    SUPABASE_API_KEY_PARAM    = aws_ssm_parameter.sensitive["supabase_api_key"].name
-    SUPABASE_SECRET_KEY_PARAM = aws_ssm_parameter.sensitive["supabase_secret_key"].name
-    TRIAL_ACTIVE_LINK_PARAM   = aws_ssm_parameter.plaintext["trial_active_link"].name
-    TRIAL_PAYMENT_LINK_PARAM  = aws_ssm_parameter.plaintext["trial_payment_link"].name
+    LEADS_TABLE              = aws_dynamodb_table.leads.name
+    MEMBERS_TABLE            = aws_dynamodb_table.members.name
+    POWERTOOLS_SERVICE_NAME  = "members"
+    STRIPE_API_KEY_PARAM     = aws_ssm_parameter.sensitive["stripe_api_key"].name
+    SUPABASE_PROJECT_PARAM   = aws_ssm_parameter.plaintext["supabase_project"].name
+    SUPABASE_API_KEY_PARAM   = aws_ssm_parameter.sensitive["supabase_api_key"].name
+    TRIAL_PAYMENT_LINK_PARAM = aws_ssm_parameter.plaintext["trial_payment_link"].name
   }
 
   iam_policy = templatefile("${path.module}/files/iam/permission_policy.json.tpl", {
@@ -75,8 +73,8 @@ module "lambda_members" {
       {
         "Effect" : "Allow",
         "Action" : [
-          "dynamodb:DeleteItem",
-          "dynamodb:PutItem"
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem"
         ],
         "Resource" : [
           aws_dynamodb_table.leads.arn
@@ -89,11 +87,9 @@ module "lambda_members" {
         ],
         "Resource" : [
           aws_ssm_parameter.plaintext["supabase_project"].arn,
+          aws_ssm_parameter.plaintext["trial_payment_link"].arn,
           aws_ssm_parameter.sensitive["stripe_api_key"].arn,
           aws_ssm_parameter.sensitive["supabase_api_key"].arn,
-          aws_ssm_parameter.sensitive["supabase_secret_key"].arn,
-          aws_ssm_parameter.plaintext["trial_active_link"].arn,
-          aws_ssm_parameter.plaintext["trial_payment_link"].arn
         ]
       }
     ])

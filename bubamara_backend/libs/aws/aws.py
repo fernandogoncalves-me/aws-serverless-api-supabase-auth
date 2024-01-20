@@ -1,3 +1,5 @@
+import decimal
+
 import boto3
 
 class AWS:
@@ -14,7 +16,15 @@ class AWS:
     return self.session.resource("dynamodb").Table(table_name).delete_item(Key=key, ReturnValues="ALL_OLD")
   
   def get_ddb_item(self, table_name: str, key: dict) -> dict:
-    return self.session.resource("dynamodb").Table(table_name).get_item(Key=key).get("Item", None)
+    item = self.session.resource("dynamodb").Table(table_name).get_item(Key=key).get("Item", None)
+    if item:
+      for attrib, value in item.items():
+        if isinstance(value, decimal.Decimal):
+          item[attrib] = int(value)
+        if isinstance(value, set):
+          item[attrib] = list(value)
+
+    return item
   
   def put_ddb_item(self, table_name: str, params: dict) -> None:
     return self.session.resource("dynamodb").Table(table_name).put_item(**params)

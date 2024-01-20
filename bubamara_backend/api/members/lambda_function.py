@@ -1,7 +1,5 @@
 import json
 import os
-import string
-import random
 
 from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, Response
 from aws_lambda_powertools.event_handler.exceptions import BadRequestError
@@ -14,43 +12,16 @@ import stripe
 
 from bubamara_backend.libs.aws import AWS
 
-TRIAL_ACTIVE_LINK_PARAM = os.environ["TRIAL_ACTIVE_LINK_PARAM"]
-TRIAL_PAYMENT_LINK_PARAM = os.environ["TRIAL_PAYMENT_LINK_PARAM"]
-
 MEMBERS_TABLE = os.environ["MEMBERS_TABLE"]
 LEADS_TABLE = os.environ["LEADS_TABLE"]
-
 STRIPE_API_KEY_PARAM = os.environ["STRIPE_API_KEY_PARAM"]
 SUPABASE_API_KEY_PARAM = os.environ['SUPABASE_API_KEY_PARAM']
 SUPABASE_PROJECT_PARAM = os.environ['SUPABASE_PROJECT_PARAM']
-SUPABASE_SECRET_KEY_PARAM = os.environ['SUPABASE_SECRET_KEY_PARAM']
+TRIAL_PAYMENT_LINK_PARAM = os.environ["TRIAL_PAYMENT_LINK_PARAM"]
 
 app = APIGatewayHttpResolver()
 aws = AWS()
 logger = Logger()
-
-
-def add_member_with_temp_password(email: str):
-    try:
-        user_uid, temp_password = create_supabase_user(email)
-        aws.put_ddb_item(
-            table_name=MEMBERS_TABLE,
-            params={
-                "Item": {
-                    "MemberID": user_uid,
-                    "Email": email,
-                    "SubscriptionType": "trial",
-                    "EarnedSessionCredits": 1,
-                    "UsedSessionCredits": 0,
-                },
-                "ConditionExpression": "attribute_not_exists(Email)"
-            }
-        )
-    except Exception as e:
-        logger.exception(e)
-        raise BadRequestError("Failed to sign up member. Please contact us for assistance.")
-
-    return temp_password
 
 
 def check_member_exists(email: str) -> bool:
@@ -69,30 +40,6 @@ def check_member_exists(email: str) -> bool:
     return len(member) > 0
 
 
-def create_supabase_user(email: str):
-    supabase_api_key = aws.get_ssm_parameter(SUPABASE_API_KEY_PARAM)
-    supabase_project = aws.get_ssm_parameter(SUPABASE_PROJECT_PARAM)
-    supabase_secret = aws.get_ssm_parameter(SUPABASE_SECRET_KEY_PARAM)
-    
-    logger.info(f"Creating Supabase user with {email}")
-    characters = string.ascii_letters + string.digits
-    temp_password = ''.join(random.choice(characters) for i in range(8))
-    response = requests.post(
-        f'https://{supabase_project}.supabase.co/auth/v1/admin/users', 
-        headers={
-            'Authorization': f"Bearer {supabase_secret}", 
-            'apikey': supabase_api_key
-        },
-        json={
-            "email": email,
-            "password":  temp_password
-        }
-    )
-    logger.info(f'Got response: {response.status_code}')
-    
-    return response.json()["id"], temp_password
-
-
 def retrieve_payment_confirmation(checkout_session: str) -> dict:
     logger.info(f"Retrieving payment confirmation for session {checkout_session}")
     stripe.api_key = aws.get_ssm_parameter(STRIPE_API_KEY_PARAM)
@@ -101,8 +48,58 @@ def retrieve_payment_confirmation(checkout_session: str) -> dict:
     return confirmation
 
 
-@app.post("/members/v1/confirmation")
-def confirmation():
+@app.get("/members/v1/member")
+def member():
+    try:
+        member = aws.get_ddb_item(
+            table_name=MEMBERS_TABLE,
+            key={"MemberID": app.current_event.get_query_string_value(name="member_id")}
+        )
+        logger.info(f"Retrieved member: {member}")
+
+        return {"member": member}
+
+    except Exception as e:
+        logger.exception(e)
+        raise BadRequestError("Failed to retrieve member details. Please contact us for assistance.")
+
+
+@app.post("/members/v1/register")
+def register():
+    try:
+        token = app.current_event.get_header_value(name="Authorization")
+        supabase_project = aws.get_ssm_parameter(SUPABASE_PROJECT_PARAM)
+        supabase_api_key = aws.get_ssm_parameter(SUPABASE_API_KEY_PARAM)
+        user = requests.get(
+            f'https://{supabase_project}.supabase.co/auth/v1/user', 
+            headers={
+                'Authorization': token, 
+                'apikey': supabase_api_key
+            }
+        ).json()
+        aws.put_ddb_item(
+            table_name=MEMBERS_TABLE,
+            params={
+                "Item": {
+                    "MemberID": user["id"],
+                    "Email": user["email"],
+                    "SubscriptionType": "trial",
+                    "EarnedSessionCredits": 1,
+                    "UsedSessionCredits": 0,
+                },
+                "ConditionExpression": "attribute_not_exists(Email)"
+            }
+        )
+        
+        return { "status": "success" }
+
+    except Exception as e:
+        logger.exception(e)
+        raise BadRequestError("Failed to confirm payment. Please contact us for assistance.")
+
+
+@app.post("/members/v1/payment")
+def payment():
     try:
         body = json.loads(app.current_event.body)
 
@@ -118,21 +115,23 @@ def confirmation():
         logger.info(f"Payment confirmed for {confirmation['customer_details']['email']}")
         
         if payment_type == "trial":
-            temp_password = add_member_with_temp_password(email)
-            lead = aws.delete_ddb_item(
+            lead = aws.update_ddb_item(
                 table_name=LEADS_TABLE,
-                key={"Email": email}
+                params={
+                    "Key": {"Email": email},
+                    "UpdateExpression": "SET PaymentStatus = :payment_status, CheckoutSessionId = :checkout_session_id",
+                    "ExpressionAttributeValues": {":payment_status": "paid", ":checkout_session_id": body["checkout_session_id"]},
+                    "ReturnValues": "ALL_NEW"
+                }
             )
-            logger.info(f"Deleted lead: {lead}")
+            logger.info(f"Updated lead: {lead} payment status to paid")
             response = {
                 **response,
                 **{
                     "status": confirmation["payment_status"],
                     "payment_type": payment_type,
                     "email": email,
-                    "temp_password": temp_password,
-                    "session_type": lead["Attributes"]["SessionType"],
-                    "session_datetime": lead["Attributes"]["SessionDatetime"] 
+                    "session": lead["Attributes"]["Session"]
                 }
             }
         
@@ -143,58 +142,39 @@ def confirmation():
         raise BadRequestError("Failed to confirm payment. Please contact us for assistance.")
 
 
-@app.get("/members/v1/me")
-def me():
-    try:
-        member = aws.get_ddb_item(
-            table_name=MEMBERS_TABLE,
-            key={"Email": app.current_event.get_query_string_value(name="email")}
-        )
-        logger.info(f"Retrieved member: {member}")
-
-        return {"member": member}
-
-    except Exception as e:
-        logger.exception(e)
-        raise BadRequestError("Failed to retrieve member details. Please contact us for assistance.")
-
-
-@app.get("/members/v1/trial")
+@app.post("/members/v1/trial")
 def trial():
-    email = app.current_event.get_query_string_value(name="email")    
+    body = json.loads(app.current_event.body)
+    email = body["email"]
     member_exists = check_member_exists(email)
 
     if member_exists:
         logger.info(f"There is already a member with email {email}")
-        redirect_url = f"{aws.get_ssm_parameter(TRIAL_ACTIVE_LINK_PARAM)}?email={email}"
+        response = {
+            "status": "member_exists",
+            "email": email
+        }
     else:
-        session_type = app.current_event.get_query_string_value(name="session_type")
-        session_datetime = app.current_event.get_query_string_value(name="session_datetime")        
-    
-        logger.info(f"Creating a lead with {email} for session {session_type} on {session_datetime}")
+        session = body["session"]
+        logger.info(f"Creating a lead with {email} for session {session['SessionType']} on {session['SessionDatetime']}")
         aws.put_ddb_item(
             table_name=LEADS_TABLE,
             params={
                 "Item": {
                     "Email": email,
                     "LeadSource": "trial_session",
-                    "SessionType": session_type,
-                    "SessionDatetime": session_datetime,
+                    "Session": session,
+                    "PaymentStatus": "pending"
                 }
             }
         )
-        redirect_url = f"{aws.get_ssm_parameter(TRIAL_PAYMENT_LINK_PARAM)}?prefilled_email={email}"
-    
-    logger.info(f"Redirecting to {redirect_url}")        
-    return Response(
-        status_code=301,
-        headers={
-            "Location": redirect_url,
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": 0
+        response = {
+            "status": "success",
+            "email": email,
+            "payment_url": f"{aws.get_ssm_parameter(TRIAL_PAYMENT_LINK_PARAM)}?prefilled_email={email}"
         }
-    )
+
+    return response
         
 
 @logger.inject_lambda_context(correlation_id_path=correlation_paths.API_GATEWAY_HTTP)

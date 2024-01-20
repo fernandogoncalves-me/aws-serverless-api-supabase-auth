@@ -4,15 +4,19 @@ locals {
       base_path       = "/members/v1/"
       lambda_function = module.lambda_members
       routes = {
-        confirmation = {
-          method = "POST"
-        }
-        me = {
+        member = {
           authorizer_id = aws_apigatewayv2_authorizer.backend.id
           method        = "GET"
         }
+        payment = {
+          method = "POST"
+        }
+        register = {
+          authorizer_id = aws_apigatewayv2_authorizer.backend.id
+          method        = "POST"
+        }
         trial = {
-          method = "GET"
+          method = "POST"
         }
       }
     }
@@ -78,6 +82,7 @@ resource "aws_apigatewayv2_authorizer" "backend" {
   api_id                            = aws_apigatewayv2_api.backend.id
   name                              = "${aws_apigatewayv2_api.backend.name}-authorizer"
   authorizer_payload_format_version = "2.0"
+  authorizer_result_ttl_in_seconds  = 300
   authorizer_type                   = "REQUEST"
   authorizer_uri                    = module.lambda_authorizer.alias.invoke_arn
   identity_sources                  = ["$request.header.Authorization"]

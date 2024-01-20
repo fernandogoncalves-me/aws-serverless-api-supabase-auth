@@ -19,35 +19,6 @@ app = APIGatewayHttpResolver()
 aws = AWS()
 logger = Logger()
 
-@app.get("/sessions/v1/prereservation")
-def prereservation():
-    try:
-        email = app.current_event.get_query_string_value(name="email")
-        session_type = app.current_event.get_query_string_value(name="session_type")
-        session_datetime = app.current_event.get_query_string_value(name="session_datetime")
-
-        aws.put_ddb_item()
-        
-        params={
-            "Limit": 15,
-            "KeyConditionExpression": "Email = :pk and begins_with(ReservationType, :sk)",
-            "ExpressionAttributeValues": {":pk": email, ":sk": session_type},
-        }
-        if pagination_key:
-            params["ExclusiveStartKey"] = {"S": pagination_key}
-
-        reservations = aws.query_ddb_items(
-            table_name=RESERVATIONS_TABLE,
-            params=params
-        )
-        logger.info(f"Retrieved reservations: {reservations}")
-
-        return {"reservations": reservations}
-
-    except Exception as e:
-        logger.exception(e)
-        raise BadRequestError("Failed to retrieve sessions. Please contact us for assistance.")
-
 
 @app.get("/sessions/v1/reservations")
 def reservations():
@@ -76,6 +47,7 @@ def reservations():
         logger.exception(e)
         raise BadRequestError("Failed to retrieve sessions. Please contact us for assistance.")
 
+
 @app.post("/sessions/v1/reserve")
 def reserve():
     try:
@@ -83,27 +55,20 @@ def reserve():
         result = aws.transact_write_items(
             transact_items=[
                 {
-                    "Put": {
-                        "TableName": RESERVATIONS_TABLE,
-                        "Item": {"Email": {"S": body["member_email"]}, "ReservationType": {"S": f"{body['session_type']}#{body['session_datetime']}"}},
-                        "ConditionExpression": "attribute_not_exists(Email) and attribute_not_exists(ReservationType)"
-                    }
-                },
-                {
                     "Update": {
                         "TableName": SESSIONS_TABLE,
                         "Key": {"SessionType": {"S": body["session_type"]}, "SessionDatetime": {"S": body["session_datetime"]}},
-                        "UpdateExpression": "ADD Reservations :increment",
-                        "ExpressionAttributeValues": {":increment": {"N": "1"},},
-                        "ConditionExpression": "Reservations < MaxCapacity"
+                        "UpdateExpression": "ADD Reservations :member_id, AvailableCapacity :decrement",
+                        "ExpressionAttributeValues": {":member_id": {"SS": [body["member_id"]]},":decrement": {"N": "-1"}},
+                        "ConditionExpression": "AvailableCapacity < MaxCapacity"
                     }
                 },
                 {
                     "Update": {
                         "TableName": MEMBERS_TABLE,
-                        "Key": {"Email": {"S": body["member_email"]}},
-                        "UpdateExpression": "ADD UsedSessionCredits :increment",
-                        "ExpressionAttributeValues": {":increment": {"N": "1"},},
+                        "Key": {"MemberID": {"S": body["member_id"]}},
+                        "UpdateExpression": "ADD UsedSessionCredits :increment, BookedSessions :session",
+                        "ExpressionAttributeValues": {":increment": {"N": "1"}, ":session": {"SS": [f"{body['session_type']}#{body['session_datetime']}"]},},
                         "ConditionExpression": "UsedSessionCredits < EarnedSessionCredits"
                     }
                 }
@@ -169,6 +134,7 @@ def list():
         params={
             "Limit": 15,
             "KeyConditionExpression": "SessionType = :pk and SessionDatetime > :sk",
+            "ProjectionExpression": "SessionType, SessionDatetime, AvailableCapacity, MaxCapacity, SessionDuration, SessionTitle",
             "ExpressionAttributeValues": {":pk": session_type, ":sk": tomorrow.strftime("%Y-%m-%d")},
         }
         if pagination_key:
