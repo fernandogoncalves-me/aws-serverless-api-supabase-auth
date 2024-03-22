@@ -9,10 +9,10 @@ terraform {
   }
 
   cloud {
-    organization = "serverlessinpractice"
+    organization = "YOUR_ORG"
 
     workspaces {
-      name = "bubamara-backend-production"
+      name = "YOUR_WORKSPACE"
     }
   }
 }

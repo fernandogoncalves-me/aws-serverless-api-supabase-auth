@@ -26,7 +26,7 @@ resource "aws_dynamodb_table" "members" {
   }
 
   attribute {
-    name = "SubscriptionId"
+    name = "SubscriptionType"
     type = "S"
   }
 
@@ -36,8 +36,8 @@ resource "aws_dynamodb_table" "members" {
   }
 
   global_secondary_index {
-    name            = "SubscriptionIdIndex"
-    hash_key        = "SubscriptionId"
+    name            = "SubscriptionTypeIndex"
+    hash_key        = "SubscriptionType"
     range_key       = "MemberID"
     projection_type = "ALL"
   }
