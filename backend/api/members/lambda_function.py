@@ -10,7 +10,7 @@ import requests
 
 import stripe
 
-from bubamara_backend.libs.aws import AWS
+from backend.libs.aws import AWS
 
 MEMBERS_TABLE = os.environ["MEMBERS_TABLE"]
 LEADS_TABLE = os.environ["LEADS_TABLE"]

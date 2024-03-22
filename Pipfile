@@ -8,6 +8,10 @@ aws-lambda-powertools = "~=2.30.2"
 stripe = "~=7.11.0"
 urllib3 = "~=1.26.18"
 requests = "~=2.31.0"
+pytest = "~=7.4.2"
+pytest-env = "~=0.6.2"
+pytest-xdist = "==3.3.1"
+moto = {extras = ["ec2", "s3", "all"], version = "~=4.2.5"}
 
 [dev-packages]
 invoke = "~=2.2.0"
@@ -17,5 +21,8 @@ boto3 = "~=1.26.90"
 python_version = "3.9"
 
 [scripts]
-package = "invoke package"
+auto-deploy = "invoke auto-deploy"
 deploy = "invoke deploy"
+package = "invoke package"
+plan = "invoke plan"
+test = "invoke test"

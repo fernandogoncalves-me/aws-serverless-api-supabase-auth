@@ -8,7 +8,7 @@ from aws_lambda_powertools.utilities.typing import LambdaContext
 from aws_lambda_powertools.logging import correlation_paths
 from aws_lambda_powertools import Logger
 
-from bubamara_backend.libs.aws import AWS
+from backend.libs.aws import AWS
 
 
 MEMBERS_TABLE = os.environ["MEMBERS_TABLE"]

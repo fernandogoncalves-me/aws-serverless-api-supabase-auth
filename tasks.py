@@ -22,5 +22,20 @@ def package(c, deps=False):
 
 
 @task
-def deploy(c):
+def auto_deploy(c):
   c.run("cd infra/ && terraform init && terraform apply --auto-approve")
+
+
+@task
+def deploy(c):
+  c.run("cd infra/ && terraform init && terraform apply")
+
+
+@task
+def plan(c):
+  c.run("cd infra/ && terraform init && terraform plan")
+
+
+@task
+def test(c):
+  c.run("python -m pytest tests/unit")
